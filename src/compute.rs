@@ -1,15 +1,20 @@
 //! Computes all Nim values for the board.
 
-use crate::board::{Board, Tagged, Type, SIZE, SIZEU};
+use crate::board::{Board, Tagged, Type, BYTES};
+use fnv::FnvHashSet as HashSet;
+use rand::RngCore;
 use rayon::prelude::*;
 use smallvec::SmallVec;
-use std::collections::HashSet;
 
 /// An upper bound for the number of components of the board, after taking our optimizations into
 /// account.
 const MAX_COMPONENTS: usize = 8;
+
 /// Number of entries to write in each hash table before dumping it on the main one.
-const HASH_LEN: usize = 1_024;
+const HASH_LEN: usize = 128;
+/// Number of stacks for multithreading. There should be enough so that the program doesn't stay
+/// with one or two threads for a long time before ending.
+const STACKS: usize = 128;
 
 /// Stores the info required to calculate the Nim value of a board.
 #[derive(Debug)]
@@ -77,7 +82,7 @@ impl Stack {
     fn new(board: Board) -> Self {
         Self {
             states: vec![State::new(board)],
-            hash: HashSet::new(),
+            hash: HashSet::default(),
             ret: None,
         }
     }
@@ -230,11 +235,21 @@ impl Board {
 
         // Multithread for the rest.
         // We start with different boards to hopefully find different positions across threads.
-        let hash = std::sync::RwLock::new(stack.hash.clone());
-        let mut stacks = Vec::with_capacity(SIZEU + 1);
+        let hash = parking_lot::RwLock::new(stack.hash.clone());
+        let mut stacks = Vec::with_capacity(STACKS + 1);
         stacks.push(stack);
-        for i in 0..SIZE {
-            stacks.push(Stack::new(Board((1 << SIZE) - (1 << i))));
+
+        // We randomize our boards so that they hopefully perform different work from each other.
+        let mut rng = [0; 2 * BYTES * STACKS];
+        rand::thread_rng().fill_bytes(&mut rng);
+        for i in 0..STACKS {
+            let get_num =
+                |a, b| Type::from_ne_bytes(rng[(a * BYTES)..(b * BYTES)].try_into().unwrap());
+            let num_1 = get_num(2 * i, 2 * i + 1);
+            let num_2 = get_num(2 * i + 1, 2 * i + 2);
+
+            // We or two numbers so we get more ones.
+            stacks.push(Stack::new(Board(num_1 | num_2)));
         }
 
         stacks.into_par_iter().for_each(|mut stack| {
@@ -243,20 +258,21 @@ impl Board {
             while !finish {
                 // Compute moves in this thread.
                 while stack.hash.len() < HASH_LEN {
-                    if !stack.step_moves(Some(&hash.read().unwrap())) {
+                    // Using `read` at this point seems to be most efficient.
+                    if !stack.step_moves(Some(&hash.read())) {
                         finish = true;
                         break;
                     }
                 }
 
                 // Once we've computed a handful of moves, add them to the hash table.
-                let mut hash = hash.write().unwrap();
+                let mut hash = hash.write();
                 for board in stack.hash.drain() {
                     hash.insert(board);
                 }
             }
         });
 
-        hash.into_inner().unwrap().into_iter()
+        hash.into_inner().into_iter()
     }
 }

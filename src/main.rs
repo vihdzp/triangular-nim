@@ -7,8 +7,8 @@ mod board;
 mod compute;
 
 use board::{Board, Tagged, N, TAGGED_BYTES};
+use fnv::FnvHashSet as HashSet;
 use std::{
-    collections::HashSet,
     fs::File,
     io::{BufReader, ErrorKind as IoErrorKind, Read, Result as IoResult, Write},
 };
@@ -42,17 +42,17 @@ fn save_moves_print(path: &str) {
     let start = Instant::now();
 
     match save_moves(path) {
-        Ok(_) => {
-            let duration = Instant::now() - start;
+        Ok(()) => {
+            let duration = start.elapsed();
             let secs = duration.as_secs();
             let millis = duration.subsec_millis();
             println!(
                 "Moves succesfully saved in '{path}'. Took {:02}:{:02}.{millis}.",
                 secs / 60,
                 secs % 60
-            )
+            );
         }
-        
+
         Err(error) => {
             let err_str = match error.kind() {
                 IoErrorKind::AlreadyExists => "file already exists",
@@ -71,7 +71,7 @@ fn load_moves(path: &str) -> IoResult<HashSet<Tagged>> {
 
     if let Some(Ok(N)) = file.next() {
         let mut buf = [0; TAGGED_BYTES];
-        let mut hash = HashSet::new();
+        let mut hash = HashSet::default();
 
         while let Some(byte) = file.next() {
             buf[0] = byte?;
@@ -234,12 +234,11 @@ fn main() {
     );
 
     let mut board = Board::FULL;
-    let stdin = std::io::stdin();
     let mut buf = String::new();
     let mut optimal = Vec::new();
 
     println!("Loading moves...");
-    let mut hash = HashSet::new();
+    let mut hash = HashSet::default();
     load_moves_print(&mut hash, NIM_FILE);
     println!("{board}");
 
@@ -248,7 +247,7 @@ fn main() {
         print!("\n> ");
         std::io::stdout().flush().expect("flush failed!");
         buf.clear();
-        if let Err(error) = stdin.read_line(&mut buf) {
+        if let Err(error) = std::io::stdin().read_line(&mut buf) {
             println!("Error: {error}");
         }
 
