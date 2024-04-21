@@ -7,3 +7,9 @@ edition = "2021"
 
 [dependencies]
 smallvec = "1.13"
+rayon = "1.10"
+
+[profile.release]
+strip = "debuginfo"
+opt-level = 3
+lto = "thin"

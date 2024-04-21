@@ -38,15 +38,29 @@ fn save_moves(path: &str) -> IoResult<()> {
 
 /// Calls [`save_moves`] and logs the result.
 fn save_moves_print(path: &str) {
-    if let Err(error) = save_moves(path) {
-        let err_str = match error.kind() {
-            IoErrorKind::AlreadyExists => "file already exists",
-            IoErrorKind::NotFound => "file path not found",
-            _ => "unknown error",
-        };
-        println!("Moves could not be saved: {err_str}.");
-    } else {
-        println!("Moves succesfully saved in '{path}'.");
+    use std::time::Instant;
+    let start = Instant::now();
+
+    match save_moves(path) {
+        Ok(_) => {
+            let duration = Instant::now() - start;
+            let secs = duration.as_secs();
+            let millis = duration.subsec_millis();
+            println!(
+                "Moves succesfully saved in '{path}'. Took {:02}:{:02}.{millis}.",
+                secs / 60,
+                secs % 60
+            )
+        }
+        
+        Err(error) => {
+            let err_str = match error.kind() {
+                IoErrorKind::AlreadyExists => "file already exists",
+                IoErrorKind::NotFound => "file path not found",
+                _ => "unknown error",
+            };
+            println!("Moves could not be saved: {err_str}.");
+        }
     }
 }
 
