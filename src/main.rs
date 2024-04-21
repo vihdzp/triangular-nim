@@ -13,8 +13,6 @@ use std::{
     io::{BufReader, ErrorKind as IoErrorKind, Read, Result as IoResult, Write},
 };
 
-use crate::board::Move;
-
 /// Default file name for saving the Nim boards.
 const NIM_FILE: &str = "solutions.nim";
 /// Error message when a position can't be found on the hash table.
@@ -30,7 +28,7 @@ const POS_ARG: &str = "pos | The value of the position to evaluate, as a binary 
 /// The first byte is the board size. All subsequent bytes are the tagged boards.
 fn save_moves(path: &str) -> IoResult<()> {
     let mut file = File::create_new(path)?;
-    file.write(&[N])?;
+    file.write_all(&[N])?;
     for board in Board::moves() {
         file.write_all(&board.0)?;
     }
@@ -55,6 +53,7 @@ fn save_moves_print(path: &str) {
 /// Reads Nim moves from a file.
 fn load_moves(path: &str) -> IoResult<HashSet<Tagged>> {
     let mut file = BufReader::new(File::open(path)?).bytes();
+    let err = Err(IoErrorKind::InvalidData.into());
 
     if let Some(Ok(N)) = file.next() {
         let mut buf = [0; TAGGED_BYTES];
@@ -66,7 +65,7 @@ fn load_moves(path: &str) -> IoResult<HashSet<Tagged>> {
                 if let Some(file_byte) = file.next() {
                     *buf_byte = file_byte?;
                 } else {
-                    return Err(IoErrorKind::InvalidData.into());
+                    return err;
                 }
             }
 
@@ -75,7 +74,7 @@ fn load_moves(path: &str) -> IoResult<HashSet<Tagged>> {
 
         Ok(hash)
     } else {
-        Err(IoErrorKind::InvalidData.into())
+        err
     }
 }
 
@@ -120,7 +119,7 @@ fn help(command: Option<&str>) {
   reset          | Resets the board."
         ),
 
-        Some("binary") | Some("bin") => println!(
+        Some("binary" | "bin") => println!(
             "\nPrints out the board in binary.
 
 Syntax: bin"
@@ -156,14 +155,14 @@ Syntax: load [file?]
   {FILE_ARG}"
         ),
 
-        Some("move") | Some("mov") => println!(
+        Some("move" | "mov") => println!(
             "\nApplies a move to the board.
         
 Syntax: move [move]
   move | The move, specified by its endpoints in the format 'row,column'."
         ),
 
-        Some("optimal") | Some("opt") => println!(
+        Some("optimal" | "opt") => println!(
             "\nFinds the optimal moves from the current or specified position.
 
 Syntax: opt [pos?]
@@ -203,6 +202,7 @@ Syntax: reset"
 }
 
 /// Main loop.
+#[allow(clippy::too_many_lines)]
 fn main() {
     // Quick sanity check.
     assert!(
@@ -243,7 +243,7 @@ fn main() {
 
         match command.next() {
             // Prints the board in binary.
-            Some("binary") | Some("bin") => println!("{:b}", board.0),
+            Some("binary" | "bin") => println!("{:b}", board.0),
 
             // Evaluate the board.
             Some("eval") => {
@@ -264,7 +264,7 @@ fn main() {
             Some("load") => load_moves_print(&mut hash, command.next().unwrap_or(NIM_FILE)),
 
             // Applies a move.
-            Some("move") | Some("mov") => {
+            Some("move" | "mov") => {
                 if let Some(start) = command.next() {
                     match start.parse() {
                         Ok(start) => {
@@ -283,7 +283,7 @@ fn main() {
                             }
 
                             // Read and apply move.
-                            if let Some(mov) = Move::new(start, end) {
+                            if let Some(mov) = board::Move::new(start, end) {
                                 let mov: Board = mov.into();
                                 if board.fits(mov) {
                                     board = board.mov(mov);
@@ -292,7 +292,7 @@ fn main() {
                                     println!("Move cannot be performed.");
                                 }
                             } else {
-                                println!("Invalid move.")
+                                println!("Invalid move.");
                             }
                         }
 
@@ -304,7 +304,7 @@ fn main() {
             }
 
             // Shows the optimal moves.
-            Some("optimal") | Some("opt") => {
+            Some("optimal" | "opt") => {
                 let eval_board;
                 if let Some(s) = command.next() {
                     match s.parse() {

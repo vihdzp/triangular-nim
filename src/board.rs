@@ -645,7 +645,7 @@ impl FromStr for Position {
 
 impl Position {
     /// Initializes a new position. Returns `None` if invalid.
-    fn new(row: u8, col: u8) -> Option<Self> {
+    const fn new(row: u8, col: u8) -> Option<Self> {
         if col <= row && row < N {
             Some(Self { row, col })
         } else {
@@ -679,29 +679,29 @@ pub struct Move {
     /// End position.
     end: Position,
     /// Move type.
-    move_type: MoveType,
+    typ: MoveType,
 }
 
 impl Move {
     /// Initializes a new move. Returns `None` if invalid.
-    pub fn new(start: Position, end: Position) -> Option<Self> {
+    pub const fn new(start: Position, end: Position) -> Option<Self> {
         if start.row == end.row {
             Some(Self {
                 start,
                 end,
-                move_type: MoveType::Row,
+                typ: MoveType::Row,
             })
         } else if start.col == end.col {
             Some(Self {
                 start,
                 end,
-                move_type: MoveType::LeftCol,
+                typ: MoveType::LeftCol,
             })
         } else if start.row + end.col == end.row + start.col {
             Some(Self {
                 start,
                 end,
-                move_type: MoveType::RightCol,
+                typ: MoveType::RightCol,
             })
         } else {
             None
@@ -724,7 +724,7 @@ impl From<Move> for Board {
         let [r2, c2] = mov.end.into();
 
         // Row move.
-        match mov.move_type {
+        match mov.typ {
             MoveType::Row => {
                 let row = r1 * (r1 + 1) / 2;
                 let (col_1, col_2) = sort_2(c1, c2);
@@ -737,7 +737,7 @@ impl From<Move> for Board {
                 let mut board = Board::EMPTY;
 
                 for row in row_1..=row_2 {
-                    board.0 |= 1 << (row * (row + 1) / 2 + col);
+                    board.0 |= 1 << get_pos(row, col);
                 }
                 board
             }
@@ -747,7 +747,7 @@ impl From<Move> for Board {
                 let mut board = Board::EMPTY;
 
                 for row in row_1..=row_2 {
-                    board.0 |= 1 << (row * (row + 1) / 2 + col_1 + row - row_1);
+                    board.0 |= 1 << get_pos(row, col_1 + row - row_1);
                 }
                 board
             }
@@ -771,7 +771,8 @@ impl Tagged {
     /// Initializes a tagged board.
     pub fn new(board: Board, tag: u8) -> Self {
         Self(
-            (board.0 as TaggedType | ((tag as TaggedType) << SIZE)).to_le_bytes()[..TAGGED_BYTES]
+            (TaggedType::from(board.0) | (TaggedType::from(tag) << SIZE)).to_le_bytes()
+                [..TAGGED_BYTES]
                 .try_into()
                 .unwrap(),
         )
