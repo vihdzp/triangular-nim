@@ -8,12 +8,14 @@ use std::{
 };
 
 /// Integer type used to store a [`Board`].
-pub type Type = u32;
+pub type Type = u64;
 /// Integer type needed to store a [`Tagged`]. This is only used in auxiliary computations.
 pub type TaggedType = u64;
+/// Integer type used to store the move index.
+pub type MovType = u16;
 
 /// Length of the board.
-pub const N: u8 = 7;
+pub const N: u8 = 8;
 /// Length of the board.
 pub const NU: usize = N as usize;
 /// Size of the board.
@@ -234,6 +236,11 @@ impl Board {
 
         boards
     };
+
+    /// Initializes a board. This zeroes out any extra bits!
+    pub fn new(num: Type) -> Self {
+        Self(num & ((1 << SIZE) - 1))
+    }
 
     /// Gets whether there's a counter at the given bit.
     pub fn get(self, pos: u8) -> bool {
@@ -781,11 +788,11 @@ impl Tagged {
     /// Recovers the board.
     pub fn board(self) -> Board {
         let mut bytes = [0; BYTES];
-        for (i, b) in bytes.iter_mut().enumerate() {
-            *b = self.0[i];
+        for (i, &b) in self.0.iter().enumerate().take(BYTES) {
+            bytes[i] = b;
         }
 
-        Board(Type::from_le_bytes(bytes) & ((1 << SIZE) - 1))
+        Board::new(Type::from_le_bytes(bytes))
     }
 
     /// Gets the tag value.

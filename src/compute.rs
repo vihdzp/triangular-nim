@@ -1,8 +1,8 @@
 //! Computes all Nim values for the board.
 
-use crate::board::{Board, Tagged, Type, BYTES};
+use crate::board::{Board, MovType, Tagged, Type, SIZE};
 use fnv::FnvHashSet as HashSet;
-use rand::RngCore;
+use rand::Rng;
 use rayon::prelude::*;
 use smallvec::SmallVec;
 
@@ -11,10 +11,9 @@ use smallvec::SmallVec;
 const MAX_COMPONENTS: usize = 8;
 
 /// Number of entries to write in each hash table before dumping it on the main one.
-const HASH_LEN: usize = 128;
-/// Number of stacks for multithreading. There should be enough so that the program doesn't stay
-/// with one or two threads for a long time before ending.
-const STACKS: usize = 128;
+const HASH_LEN: usize = 64;
+/// The number of stacks to create for each bit count.
+const STACK_PER_SIZE: usize = 64;
 
 /// Stores the info required to calculate the Nim value of a board.
 #[derive(Debug)]
@@ -32,7 +31,7 @@ struct State {
     /// The component index to check.
     index: u8,
     /// The move number to apply.
-    mov: u8,
+    mov: MovType,
 }
 
 impl State {
@@ -223,55 +222,58 @@ impl Board {
 
     /// Compute the Nim values for this board size.
     pub fn moves() -> impl Iterator<Item = Tagged> {
-        let mut stack = Stack::new(Board::FULL);
-
         // Calculate first few moves.
         // This is done sequentially to avoid constantly calculating the same thing.
-        while stack.hash.len() < HASH_LEN {
-            if !stack.step_moves(None) {
-                return stack.hash.into_iter();
-            }
+        let mut stack = Stack::new(Board::new(u16::MAX.into()));
+        while stack.step_moves(None) {}
+        if crate::N <= 5 {
+            return stack.hash.into_iter();
         }
+        println!("Initial values computed, starting multithreading...");
 
         // Multithread for the rest.
         // We start with different boards to hopefully find different positions across threads.
         let hash = parking_lot::RwLock::new(stack.hash.clone());
-        let mut stacks = Vec::with_capacity(STACKS + 1);
-        stacks.push(stack);
+        let mut stacks = Vec::new();
+        stacks.push(Board::FULL);
 
         // We randomize our boards so that they hopefully perform different work from each other.
-        let mut rng = [0; 2 * BYTES * STACKS];
-        rand::thread_rng().fill_bytes(&mut rng);
-        for i in 0..STACKS {
-            let get_num =
-                |a, b| Type::from_ne_bytes(rng[(a * BYTES)..(b * BYTES)].try_into().unwrap());
-            let num_1 = get_num(2 * i, 2 * i + 1);
-            let num_2 = get_num(2 * i + 1, 2 * i + 2);
+        for j in 8..(2 * SIZE) {
+            for _ in 0..STACK_PER_SIZE {
+                let mut board = 0;
 
-            // We or two numbers so we get more ones.
-            stacks.push(Stack::new(Board(num_1 | num_2)));
+                // Create board with about j counters.
+                for _ in 0..j {
+                    board |= 1 << (rand::thread_rng().gen::<u8>() % SIZE);
+                }
+                stacks.push(Board(board));
+            }
         }
+        stacks.sort_unstable_by_key(|b| b.0.count_ones());
 
-        stacks.into_par_iter().for_each(|mut stack| {
-            let mut finish = false;
+        stacks
+            .into_par_iter()
+            .map(Stack::new)
+            .for_each(|mut stack| {
+                let mut finish = false;
 
-            while !finish {
-                // Compute moves in this thread.
-                while stack.hash.len() < HASH_LEN {
-                    // Using `read` at this point seems to be most efficient.
-                    if !stack.step_moves(Some(&hash.read())) {
-                        finish = true;
-                        break;
+                while !finish {
+                    // Compute moves in this thread.
+                    while stack.hash.len() < HASH_LEN {
+                        // Using `read` at this point seems to be most efficient.
+                        if !stack.step_moves(Some(&hash.read())) {
+                            finish = true;
+                            break;
+                        }
+                    }
+
+                    // Once we've computed a handful of moves, add them to the hash table.
+                    let mut hash = hash.write();
+                    for board in stack.hash.drain() {
+                        hash.insert(board);
                     }
                 }
-
-                // Once we've computed a handful of moves, add them to the hash table.
-                let mut hash = hash.write();
-                for board in stack.hash.drain() {
-                    hash.insert(board);
-                }
-            }
-        });
+            });
 
         hash.into_inner().into_iter()
     }

@@ -10,7 +10,7 @@ use board::{Board, Tagged, N, TAGGED_BYTES};
 use fnv::FnvHashSet as HashSet;
 use std::{
     fs::File,
-    io::{BufReader, ErrorKind as IoErrorKind, Read, Result as IoResult, Write},
+    io::{BufReader, BufWriter, ErrorKind as IoErrorKind, Read, Result as IoResult, Write},
 };
 
 /// Default file name for saving the Nim boards.
@@ -27,7 +27,7 @@ const POS_ARG: &str = "pos | The value of the position to evaluate, as a binary 
 ///
 /// The first byte is the board size. All subsequent bytes are the tagged boards.
 fn save_moves(path: &str) -> IoResult<()> {
-    let mut file = File::create_new(path)?;
+    let mut file = BufWriter::new(File::create_new(path)?);
     file.write_all(&[N])?;
     for board in Board::moves() {
         file.write_all(&board.0)?;
@@ -301,6 +301,9 @@ fn main() {
                                 if board.fits(mov) {
                                     board = board.mov(mov);
                                     println!("{board}");
+                                    if board == Board::EMPTY {
+                                        println!("You win!");
+                                    }
                                 } else {
                                     println!("Move cannot be performed.");
                                 }
